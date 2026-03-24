@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s Debug Lab — Diagnose & Fix</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07090f;--p1:#0b0e16;--p2:#10141e;--p3:#151b28;--p4:#1c2336;
+  --border:#1a2332;--border2:#222e42;--border3:#2c3d56;
+  --green:#00d68f;--g2:#00b377;--gdim:#00d68f1a;--gbord:#00d68f30;
+  --blue:#4da3ff;--bdim:#4da3ff15;--bbord:#4da3ff30;
+  --amber:#f5a623;--adim:#f5a62315;--abord:#f5a62330;
+  --red:#ff5e5e;--rdim:#ff5e5e15;--rbord:#ff5e5e30;
+  --cyan:#00e5ff;--cdim:#00e5ff10;--cbord:#00e5ff28;
+  --violet:#a78bfa;--vdim:#a78bfa15;--vbord:#a78bfa30;
+  --t1:#dde8f8;--t2:#afc0d8;--t3:#6e88a4;--t4:#3f5570;--t5:#263547;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);font-family:var(--sans);font-size:14px}
+.screen{display:none;position:fixed;inset:0;z-index:10}
+.screen.active{display:flex;flex-direction:column}
+
+/* ── HOME ── */
+#home{background:var(--bg);overflow-y:auto}
+.hi{max-width:820px;margin:0 auto;padding:36px 22px 56px}
+.ey{font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.ey::after{content:'';flex:1;height:1px;background:var(--gbord)}
+.h1{font-size:28px;font-weight:700;line-height:1.25;margin-bottom:6px}
+.h1 span{color:var(--green)}
+.h-sub{font-size:13px;color:var(--t3);line-height:1.7;max-width:520px;margin-bottom:24px}
+.phase-explain{display:flex;gap:0;align-items:stretch;background:var(--p2);border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.pe-item{flex:1;padding:14px 16px;display:flex;align-items:flex-start;gap:10px;border-right:1px solid var(--border)}
+.pe-item:last-child{border:none}
+.pe-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;flex-shrink:0;margin-top:1px}
+.pe-d{background:var(--adim);border:1px solid var(--abord);color:var(--amber)}
+.pe-f{background:var(--gdim);border:1px solid var(--gbord);color:var(--green)}
+.pe-v{background:var(--vdim);border:1px solid var(--vbord);color:var(--violet)}
+.pe-body strong{font-size:12px;font-weight:600;color:var(--t1);display:block;margin-bottom:3px}
+.pe-body span{font-size:11.5px;color:var(--t3);line-height:1.5}
+.cards-lbl{font-family:var(--mono);font-size:10px;color:var(--t4);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px}
+.hcards{display:flex;flex-direction:column;gap:8px}
+.hcard{background:var(--p1);border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;transition:all .18s;display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center}
+.hcard:hover{border-color:var(--border3);background:var(--p2);transform:translateX(3px)}
+.hcard.done{border-color:var(--gbord);background:var(--gdim)}
+.hcard.in-progress{border-color:var(--abord)}
+.hnum{width:34px;height:34px;border-radius:50%;background:var(--p3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--t3);transition:all .18s}
+.hcard:hover .hnum{color:var(--blue);border-color:var(--bbord);background:var(--bdim)}
+.hcard.done .hnum{color:var(--green);border-color:var(--gbord);background:var(--gdim)}
+.hcard-body .hct{font-size:13px;font-weight:600;color:var(--t1);margin-bottom:3px}
+.hcard-body .hcd{font-size:11.5px;color:var(--t3)}
+.hcard-meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.ttag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;background:var(--cdim);border:1px solid var(--cbord);color:var(--cyan);white-space:nowrap}
+.stag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:10px;white-space:nowrap}
+.stag-new{background:var(--p3);border:1px solid var(--border2);color:var(--t4)}
+.stag-diag{background:var(--adim);border:1px solid var(--abord);color:var(--amber)}
+.stag-done{background:var(--gdim);border:1px solid var(--gbord);color:var(--green)}
+
+/* ── LAB ── */
+#lab{overflow:hidden;height:100vh}
+
+/* NAV */
+#nav{height:42px;border-bottom:1px solid var(--border);background:var(--p1);display:flex;align-items:center;padding:0 12px;gap:0;flex-shrink:0}
+.nav-home{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--green);cursor:pointer;padding:5px 9px;border-radius:5px;transition:all .15s;border:1px solid transparent;flex-shrink:0}
+.nav-home:hover{background:var(--gdim);border-color:var(--gbord)}
+.vsep{width:1px;height:18px;background:var(--border2);margin:0 8px;flex-shrink:0}
+.npills{display:flex;gap:3px;flex:1;overflow-x:auto;scrollbar-width:none}
+.npills::-webkit-scrollbar{display:none}
+.np{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .15s;border:1px solid var(--border);color:var(--t4);white-space:nowrap;display:flex;align-items:center;gap:4px;flex-shrink:0}
+.np:hover{color:var(--t2);border-color:var(--border3)}
+.np.cur-diag{border-color:var(--abord);color:var(--amber);background:var(--adim)}
+.np.cur-fix{border-color:var(--gbord);color:var(--green);background:var(--gdim)}
+.np.done{border-color:var(--gbord);color:var(--green)}
+.np-dot{width:4px;height:4px;border-radius:50%;background:currentColor}
+.nav-r{display:flex;align-items:center;gap:7px;flex-shrink:0;margin-left:6px}
+.sc-pill{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:10px;background:var(--gdim);border:1px solid var(--gbord);color:var(--green)}
+
+/* PHASE BAR */
+#pbar{height:36px;border-bottom:1px solid var(--border);background:var(--p2);display:flex;align-items:center;padding:0 14px;gap:10px;flex-shrink:0}
+.ps{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:5px;transition:all .2s;cursor:default}
+.ps.cur-d{background:var(--adim);border:1px solid var(--abord)}
+.ps.cur-f{background:var(--gdim);border:1px solid var(--gbord)}
+.ps.done-s{opacity:.5}
+.ps.idle{opacity:.28}
+.ps-dot{width:6px;height:6px;border-radius:50%}
+.ps-d-dot{background:var(--amber)}
+.ps-f-dot{background:var(--green)}
+.ps-v-dot{background:var(--violet)}
+.ps-lbl{font-family:var(--mono);font-size:11px;font-weight:500;white-space:nowrap}
+.ps-d-lbl{color:var(--amber)}
+.ps-f-lbl{color:var(--green)}
+.ps-v-lbl{color:var(--violet)}
+.pbar-arrow{color:var(--t5);font-size:13px}
+.pbar-r{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--t4)}
+
+/* BODY */
+#lbody{display:grid;grid-template-columns:302px 1fr 250px;overflow:hidden;height:calc(100vh - 78px)}
+
+/* LEFT */
+#lp{border-right:1px solid var(--border);background:var(--p1);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+#lp::-webkit-scrollbar{width:3px}
+#lp::-webkit-scrollbar-thumb{background:var(--border2)}
+.lp-wrap{padding:14px}
+.ib{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.ib-id{font-family:var(--mono);font-size:10px;color:var(--t4)}
+.sb{font-size:9px;font-family:var(--mono);padding:2px 7px;border-radius:10px;display:inline-flex;align-items:center;gap:3px}
+.sb-open{background:var(--rdim);border:1px solid var(--rbord);color:var(--red)}
+.sb-fix{background:var(--adim);border:1px solid var(--abord);color:var(--amber)}
+.sb-done{background:var(--gdim);border:1px solid var(--gbord);color:var(--green)}
+.sb-dot{width:4px;height:4px;border-radius:50%;background:currentColor}
+.it{font-size:14px;font-weight:700;line-height:1.35;margin-bottom:5px}
+.ipri{font-size:9px;font-family:var(--mono);padding:2px 7px;border-radius:4px;display:inline-block;margin-bottom:10px}
+.pc{background:var(--rdim);border:1px solid var(--rbord);color:var(--red)}
+.ph{background:var(--adim);border:1px solid var(--abord);color:var(--amber)}
+.slbl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--t4);margin:10px 0 5px}
+.ctx{font-size:12px;color:var(--t3);line-height:1.7}
+.eblk{font-family:var(--mono);font-size:10px;background:var(--p3);border:1px solid var(--border);border-left:2px solid var(--red);border-radius:5px;padding:9px 11px;margin:8px 0;color:var(--t2);overflow-x:auto;white-space:pre;line-height:1.6}
+.obj{border-radius:7px;padding:10px 12px;margin:8px 0}
+.obj-d{background:var(--adim);border:1px solid var(--abord)}
+.obj-f{background:var(--gdim);border:1px solid var(--gbord)}
+.obj-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.obj-d-lbl{color:var(--amber)}
+.obj-f-lbl{color:var(--green)}
+.obj-txt{font-size:12px;color:var(--t2);line-height:1.6}
+.tech-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;padding:3px 9px;border-radius:4px;background:var(--cdim);border:1px solid var(--cbord);color:var(--cyan);margin-top:6px}
+
+/* STEPS GUIDE */
+.guide-wrap{margin-top:12px;padding-bottom:16px}
+.guide-card{background:var(--p3);border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+.gtabs{display:flex;border-bottom:1px solid var(--border)}
+.gtab{flex:1;padding:8px 0;font-family:var(--mono);font-size:10px;text-align:center;cursor:pointer;color:var(--t4);transition:all .15s;border:none;background:transparent}
+.gtab.on{background:var(--p4);color:var(--t1)}
+.gc{padding:12px;display:none}
+.gc.on{display:block}
+
+/* Step-by-step */
+.step{display:flex;gap:10px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.step:last-child{border:none;margin-bottom:0;padding-bottom:0}
+.step-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:600;flex-shrink:0;margin-top:1px}
+.sn-d{background:var(--adim);border:1px solid var(--abord);color:var(--amber)}
+.sn-f{background:var(--gdim);border:1px solid var(--gbord);color:var(--green)}
+.sn-v{background:var(--vdim);border:1px solid var(--vbord);color:var(--violet)}
+.step-body{min-width:0;flex:1}
+.step-lbl{font-size:11px;font-weight:600;color:var(--t2);margin-bottom:3px}
+.step-desc{font-size:11px;color:var(--t3);line-height:1.5;margin-bottom:5px}
+.step-cmd{font-family:var(--mono);font-size:10.5px;background:var(--p2);border:1px solid var(--border);border-radius:4px;padding:7px 9px;color:var(--green);cursor:pointer;display:block;transition:all .15s;word-break:break-all;line-height:1.55;white-space:pre-wrap}
+.step-cmd:hover{border-color:var(--gbord);background:var(--gdim)}
+.step-cmd::after{content:' ↵';color:var(--t4);font-size:9px}
+.step-note{font-size:10px;color:var(--t4);margin-top:3px;font-style:italic}
+.step-completed{opacity:.45}
+.step-completed .step-num{background:var(--gdim);border-color:var(--gbord)}
+.step-completed .step-num::after{content:'✓'}
+
+/* Hints */
+.hint-row{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.hint-row:last-of-type{border:none;margin-bottom:0}
+.hint-q{font-size:11px;font-weight:600;color:var(--amber);margin-bottom:3px;display:flex;align-items:center;gap:5px}
+.hint-q::before{content:'?';display:inline-flex;width:15px;height:15px;border-radius:50%;background:var(--adim);border:1px solid var(--abord);align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;flex-shrink:0}
+.hint-a{font-family:var(--mono);font-size:11px;color:var(--t3);line-height:1.55;padding-left:20px;display:none}
+.hint-a.show{display:block}
+.hint-tog{background:transparent;border:none;font-size:10px;color:var(--amber);cursor:pointer;font-family:var(--mono);padding:0;margin-left:auto;text-decoration:underline}
+
+/* What to check */
+.check-item{display:flex;gap:8px;margin-bottom:8px;font-size:11.5px;line-height:1.55}
+.ci-bullet{color:var(--cyan);font-family:var(--mono);flex-shrink:0;margin-top:1px}
+.ci-body strong{color:var(--t2);display:block;font-size:11px;margin-bottom:1px}
+.ci-body span{color:var(--t3)}
+
+/* CENTER TERMINAL */
+#cp{display:flex;flex-direction:column;overflow:hidden}
+.tbar{display:flex;align-items:center;gap:6px;padding:0 14px;height:34px;border-bottom:1px solid var(--border);background:var(--p1);flex-shrink:0}
+.tdot{width:10px;height:10px;border-radius:50%}
+.td-r{background:#ff5f56}.td-y{background:#ffbd2e}.td-g{background:#27c93f}
+.tlbl{font-family:var(--mono);font-size:10px;color:var(--t4);margin-left:4px;flex:1}
+.tarr{display:flex;gap:4px}
+.ab{background:transparent;border:1px solid var(--border2);border-radius:4px;padding:3px 9px;font-size:10px;font-family:var(--mono);color:var(--t3);cursor:pointer;transition:all .15s}
+.ab:hover:not(:disabled){color:var(--t1);border-color:var(--border3)}
+.ab:disabled{opacity:.2;cursor:default}
+#term{flex:1;overflow-y:auto;padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.85;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+#term::-webkit-scrollbar{width:3px}
+#term::-webkit-scrollbar-thumb{background:var(--border2)}
+.tl{margin:0}
+.tp{color:var(--blue)}
+.tc{color:var(--t1)}
+.to{color:var(--t3);white-space:pre-wrap;word-break:break-word}
+.to.ok{color:var(--green)}
+.to.err{color:var(--red)}
+.to.warn{color:var(--amber)}
+.to.sys{color:var(--cyan);font-style:italic}
+.to.fsys{color:var(--violet);font-style:italic}
+.to.vsys{color:var(--green);font-style:italic}
+.to.spin{color:var(--t5);animation:fade .9s ease-in-out infinite}
+@keyframes fade{0%,100%{opacity:.15}50%{opacity:.85}}
+.ibar{display:flex;align-items:center;padding:8px 14px;border-top:1px solid var(--border);background:var(--p1);flex-shrink:0}
+.ipr{font-family:var(--mono);font-size:12px;margin-right:8px}
+.ipr-d{color:var(--blue)}
+.ipr-f{color:var(--green)}
+.ipr-v{color:var(--violet)}
+#ci{flex:1;background:transparent;border:none;outline:none;font-family:var(--mono);font-size:12px;color:var(--t1);caret-color:var(--blue)}
+#ci::placeholder{color:var(--t5)}
+#ci:disabled{opacity:.2}
+.ikbd{font-family:var(--mono);font-size:9px;color:var(--t5);white-space:nowrap}
+
+/* RIGHT FEED */
+#rp{border-left:1px solid var(--border);background:var(--p1);display:flex;flex-direction:column;overflow:hidden}
+.fhdr{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ftit{font-family:var(--mono);font-size:11px;color:var(--t2);font-weight:500}
+.fon{font-size:9px;font-family:var(--mono);color:var(--green);display:flex;align-items:center;gap:4px}
+.fon::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);display:block}
+#feed{flex:1;overflow-y:auto;padding:9px;display:flex;flex-direction:column;gap:6px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+#feed::-webkit-scrollbar{width:3px}
+#feed::-webkit-scrollbar-thumb{background:var(--border2)}
+.fm{background:var(--p2);border:1px solid var(--border);border-radius:8px;padding:8px 9px}
+.fmtop{display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.av{width:19px;height:19px;border-radius:50%;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.av1{background:#1e3a5f;color:#93c5fd}
+.av2{background:#3b0764;color:#d8b4fe}
+.av3{background:#064e3b;color:#6ee7b7}
+.av4{background:#78350f;color:#fcd34d}
+.fn{font-size:10px;font-weight:600;color:var(--t2)}
+.ft{font-size:9px;font-family:var(--mono);color:var(--t4);margin-left:auto}
+.fb{font-size:11px;color:var(--t3);line-height:1.5}
+.ftag{font-size:8px;font-family:var(--mono);padding:1px 5px;border-radius:3px}
+.fbugg{background:var(--rdim);border:1px solid var(--rbord);color:var(--red)}
+.finfo{background:var(--bdim);border:1px solid var(--bbord);color:var(--blue)}
+.ffix{background:var(--gdim);border:1px solid var(--gbord);color:var(--green)}
+
+/* OVERLAYS */
+.ov{display:none;position:fixed;inset:0;background:rgba(7,9,15,.9);z-index:300;align-items:center;justify-content:center;backdrop-filter:blur(7px)}
+.ov.show{display:flex}
+.ovb{background:var(--p2);border:1px solid var(--border3);border-radius:14px;padding:24px 26px;max-width:490px;width:94%;box-shadow:0 0 60px rgba(0,214,143,.05)}
+.ovtop{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ovicon{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.ovi-d{background:var(--adim);border:1px solid var(--abord)}
+.ovi-f{background:var(--gdim);border:1px solid var(--gbord)}
+.ovh{font-size:18px;font-weight:700}
+.ovs{font-size:12.5px;color:var(--t3);line-height:1.65;margin-bottom:11px}
+.ovlearn{background:var(--p3);border:1px solid var(--border);border-radius:7px;padding:11px 13px;font-family:var(--mono);font-size:11px;color:var(--t3);line-height:1.75;margin-bottom:14px;white-space:pre-wrap;max-height:170px;overflow-y:auto;scrollbar-width:thin}
+.ovlearn b{color:var(--cyan)}
+.ovcmd{color:var(--green)}
+.ovals{display:flex;gap:8px}
+.ov-sec{flex:1;background:transparent;border:1px solid var(--border3);color:var(--t2);border-radius:7px;padding:10px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);transition:all .2s}
+.ov-sec:hover{background:var(--p3)}
+.ov-pri-d{flex:2;background:var(--amber);color:#130a00;border:none;border-radius:7px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--sans);transition:all .2s}
+.ov-pri-d:hover{background:#f0b040}
+.ov-pri-f{flex:2;background:var(--green);color:var(--bg);border:none;border-radius:7px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--sans);transition:all .2s}
+.ov-pri-f:hover{background:var(--g2)}
+
+/* FINAL */
+#fin{background:var(--bg);overflow-y:auto;align-items:center;justify-content:center;padding:36px 20px}
+.fi{max-width:450px;width:100%;text-align:center}
+.fi-ey{font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:10px}
+.fi-ey::before,.fi-ey::after{content:'';flex:1;height:1px;background:var(--gbord)}
+.fi-h{font-size:26px;font-weight:700;margin-bottom:5px}
+.fi-s{font-size:12.5px;color:var(--t3);margin-bottom:22px;line-height:1.6}
+.fi-g{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px}
+.fi-c{background:var(--p2);border:1px solid var(--border2);border-radius:9px;padding:14px}
+.fi-n{font-size:24px;font-weight:700;font-family:var(--mono)}
+.fi-ng{color:var(--green)}.fi-nb{color:var(--blue)}
+.fi-l{font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
+.fi-list{background:var(--p1);border:1px solid var(--border);border-radius:9px;padding:10px 14px;margin-bottom:20px;text-align:left}
+.fi-row{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--border)}
+.fi-row:last-child{border:none}
+.fi-chk{color:var(--green);font-family:var(--mono);font-size:11px;flex-shrink:0}
+.fi-name{color:var(--t2);flex:1;font-size:11.5px}
+.fi-tch{font-family:var(--mono);font-size:9px;color:var(--t4)}
+.fi-btn{background:var(--green);color:var(--bg);border:none;border-radius:8px;padding:11px 34px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--sans);transition:all .2s}
+.fi-btn:hover{background:var(--g2);transform:translateY(-1px)}
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<div id="home" class="screen active">
+<div class="hi">
+  <div class="ey">kubernetes.io — debug-application/debug-running-pod</div>
+  <div class="h1">K8s Pod Debug Lab<br><span>Diagnose &amp; Fix</span></div>
+  <div class="h-sub">5 real production incidents. Each has two hands-on phases: find the root cause with kubectl, then apply the fix and validate it worked. All techniques from the official Kubernetes docs.</div>
+  <div class="phase-explain">
+    <div class="pe-item"><div class="pe-num pe-d">1</div><div class="pe-body"><strong>Diagnose</strong><span>Use kubectl to find exactly why the pod is broken</span></div></div>
+    <div class="pe-item"><div class="pe-num pe-f">2</div><div class="pe-body"><strong>Fix</strong><span>Apply the kubectl commands that resolve the root cause</span></div></div>
+    <div class="pe-item" style="border:none"><div class="pe-num pe-v">3</div><div class="pe-body"><strong>Validate</strong><span>Confirm the pod is healthy with verification commands</span></div></div>
+  </div>
+  <div class="cards-lbl">5 scenarios — click any to start</div>
+  <div class="hcards" id="hcards"></div>
+</div>
+</div>
+
+<!-- LAB -->
+<div id="lab" class="screen">
+  <div id="nav">
+    <div class="nav-home" onclick="goHome()">⌂ Home</div>
+    <div class="vsep"></div>
+    <div class="npills" id="npills"></div>
+    <div class="nav-r">
+      <button class="ab" id="bp" onclick="nav(-1)">←</button>
+      <button class="ab" id="bn" onclick="nav(1)">→</button>
+      <div class="sc-pill" id="sc-pill">0 / 5 fixed</div>
+    </div>
+  </div>
+  <div id="pbar">
+    <div class="ps" id="ps1"><div class="ps-dot ps-d-dot"></div><div class="ps-lbl ps-d-lbl">1 · Diagnose</div></div>
+    <div class="pbar-arrow">›</div>
+    <div class="ps" id="ps2"><div class="ps-dot ps-f-dot"></div><div class="ps-lbl ps-f-lbl">2 · Fix</div></div>
+    <div class="pbar-arrow">›</div>
+    <div class="ps" id="ps3"><div class="ps-dot ps-v-dot"></div><div class="ps-lbl ps-v-lbl">3 · Validate</div></div>
+    <div class="pbar-r" id="pbar-status"></div>
+  </div>
+  <div id="lbody">
+    <!-- LEFT -->
+    <div id="lp">
+      <div class="lp-wrap">
+        <div class="ib"><span class="ib-id" id="lp-id">POD-001</span><span class="sb sb-open" id="lp-sb"><span class="sb-dot"></span>open</span></div>
+        <div class="it" id="lp-t">—</div>
+        <div class="ipri" id="lp-pri">—</div>
+        <div class="slbl">Context</div>
+        <div class="ctx" id="lp-ctx"></div>
+        <div class="eblk" id="lp-err"></div>
+        <div id="lp-obj-wrap"></div>
+        <div class="tech-chip" id="lp-tech">—</div>
+        <div class="guide-wrap">
+          <div class="guide-card">
+            <div class="gtabs">
+              <button class="gtab on" id="gt-steps" onclick="sg('steps')">Steps</button>
+              <button class="gtab" id="gt-hints" onclick="sg('hints')">Hints</button>
+              <button class="gtab" id="gt-check" onclick="sg('check')">What to check</button>
+            </div>
+            <div class="gc on" id="gc-steps"></div>
+            <div class="gc" id="gc-hints"></div>
+            <div class="gc" id="gc-check"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- CENTER -->
+    <div id="cp">
+      <div class="tbar">
+        <div class="tdot td-r"></div><div class="tdot td-y"></div><div class="tdot td-g"></div>
+        <div class="tlbl" id="tlbl">prod-cluster — kubectl</div>
+        <div class="tarr">
+          <button class="ab" id="tp" onclick="nav(-1)">← Prev</button>
+          <button class="ab" id="tn" onclick="nav(1)">Next →</button>
+        </div>
+      </div>
+      <div id="term"></div>
+      <div class="ibar">
+        <span class="ipr ipr-d" id="ipr">$</span>
+        <input id="ci" type="text" spellcheck="false" autocomplete="off" placeholder="kubectl …">
+        <span class="ikbd">↑↓ history · Ctrl+L clear</span>
+      </div>
+    </div>
+    <!-- RIGHT -->
+    <div id="rp">
+      <div class="fhdr"><div class="ftit">#k8s-incidents</div><div class="fon">4 online</div></div>
+      <div id="feed"></div>
+    </div>
+  </div>
+</div>
+
+<!-- DIAG OVERLAY -->
+<div class="ov" id="ov-d">
+<div class="ovb">
+  <div class="ovtop"><div class="ovicon ovi-d">🔍</div><div class="ovh" id="od-h">Root cause found!</div></div>
+  <div class="ovs" id="od-s"></div>
+  <div class="ovlearn" id="od-l"></div>
+  <div class="ovals">
+    <button class="ov-sec" onclick="closeOvD()">Keep exploring</button>
+    <button class="ov-pri-d" onclick="gotoFix()">Start Fix phase →</button>
+  </div>
+</div>
+</div>
+
+<!-- FIX OVERLAY -->
+<div class="ov" id="ov-f">
+<div class="ovb">
+  <div class="ovtop"><div class="ovicon ovi-f">✓</div><div class="ovh" id="of-h">Fix applied!</div></div>
+  <div class="ovs" id="of-s"></div>
+  <div class="ovlearn" id="of-l"></div>
+  <div class="ovals">
+    <button class="ov-sec" onclick="closeOvF()">Run validation →</button>
+    <button class="ov-pri-f" id="of-next">Next scenario →</button>
+  </div>
+</div>
+</div>
+
+<!-- FINAL -->
+<div id="fin" class="screen">
+<div class="fi">
+  <div class="fi-ey">Lab complete</div>
+  <div class="fi-h">All 5 Incidents Resolved 🎉</div>
+  <div class="fi-s">You diagnosed, fixed, and validated every pod issue<br>using official Kubernetes kubectl techniques</div>
+  <div class="fi-g">
+    <div class="fi-c"><div class="fi-n fi-ng" id="f-sc">5/5</div><div class="fi-l">Resolved</div></div>
+    <div class="fi-c"><div class="fi-n fi-nb" id="f-cm">0</div><div class="fi-l">Commands run</div></div>
+    <div class="fi-c"><div class="fi-n fi-ng" id="f-hi">0</div><div class="fi-l">Hints used</div></div>
+    <div class="fi-c"><div class="fi-n fi-nb" id="f-ti">—</div><div class="fi-l">Time taken</div></div>
+  </div>
+  <div class="fi-list" id="f-list"></div>
+  <button class="fi-btn" onclick="restart()">↺ Restart Lab</button>
+</div>
+</div>
+
+<script>
+/* ──────────────────────────────
+   TEAM
+────────────────────────────── */
+const TEAM={sara:{n:'Sara',av:'av1'},dev:{n:'Dev',av:'av2'},mia:{n:'Mia',av:'av3'},tom:{n:'Tom',av:'av4'}};
+
+/* ──────────────────────────────
+   SCENARIOS
+   Each has:
+   - diagnose phase (find root cause)
+   - fix phase (apply fix)
+   - validate phase (confirm healthy)
+   The system prompt tracks cluster state
+   (BROKEN / FIXED) so validation works.
+────────────────────────────── */
+const SC=[
+// ─────────────────────────────────────────
+// POD-001  OOMKilled api-gateway
+// ─────────────────────────────────────────
+{
+  id:'POD-001', title:'api-gateway keeps crashing — logs look clean',
+  pri:'pc', priLbl:'🔴 Critical', technique:'logs --previous → set resources → rollout',
+  ctx:'The api-gateway pod in the payments namespace has restarted 11 times. Current logs show a clean startup — nothing useful. It exits before writing the real error.',
+  err:`$ kubectl get pods -n payments
+NAME                     READY   STATUS             RESTARTS
+api-gateway-7d4b-xkz2    0/1     CrashLoopBackOff   11
+
+$ kubectl logs api-gateway-7d4b-xkz2 -n payments
+Starting API Gateway v2.1.0...  Memory: 52Mi/64Mi
+(container restarted — crash not logged here)`,
+  // ── PHASE 1: DIAGNOSE ──
+  d_obj:'Find why the pod keeps crashing. Current logs show nothing — you need the terminated container\'s output.',
+  d_steps:[
+    {n:1,lbl:'Check pod status',desc:'See restart count and status reason.',cmd:'kubectl get pods -n payments',note:'Notice RESTARTS count and STATUS = CrashLoopBackOff'},
+    {n:2,lbl:'Inspect pod details',desc:'Read the Last State and Exit Code fields.',cmd:'kubectl describe pod api-gateway-7d4b-xkz2 -n payments',note:'Scroll to Containers → api-gateway → Last State → Exit Code'},
+    {n:3,lbl:'Get the CRASHED container logs',desc:'The --previous flag reads the TERMINATED instance\'s output, not the current running one.',cmd:'kubectl logs api-gateway-7d4b-xkz2 -n payments --previous',note:'This is the key command — you\'ll see the actual error here'},
+  ],
+  d_hints:[
+    {q:'Why do current logs show nothing?',a:'The container just restarted fresh. Its logs start clean. The crash happened in the previous instance.'},
+    {q:'What does --previous do?',a:'It fetches stdout/stderr from the terminated container, not the current running one. Same as using the -p short flag.'},
+    {q:'What exit code should I look for?',a:'Exit code 137 = OOMKilled. The kernel killed the process because it exceeded its memory limit.'},
+  ],
+  d_check:[
+    {t:'Exit Code in describe',d:'137 = OOMKilled (memory limit exceeded). 1 = app error. 2 = config error.'},
+    {t:'--previous log output',d:'Shows the actual WARN and FATAL lines from just before the crash'},
+    {t:'Memory limit in describe',d:'Check Limits.memory — is it large enough for what the app needs?'},
+  ],
+  d_rx:[/--previous|-p\b/],
+  d_title:'OOMKilled confirmed!',
+  d_sub:'The --previous flag revealed the real crash. The gateway hit 64Mi while loading 3,102 routes and was killed by the kernel (exit 137).',
+  d_learn:`kubectl logs <pod> --previous  ← reads terminated container
+
+Crash output:
+  [WARN] Memory critical: 63Mi / 64Mi
+  [FATAL] OOM killer invoked
+  exit code 137 (OOMKilled)
+
+The current logs look clean because the new
+pod instance hasn't crashed yet.`,
+  // ── PHASE 2: FIX ──
+  f_obj:'Increase the memory limit on the api-gateway deployment to 256Mi so it can load all routes without hitting OOM.',
+  f_steps:[
+    {n:1,lbl:'Patch the memory limit',desc:'Use kubectl set resources to update the deployment spec directly. Kubernetes will automatically trigger a rolling update.',cmd:'kubectl set resources deployment/api-gateway -n payments --limits=memory=256Mi --requests=memory=128Mi',note:'This updates the deployment and starts rolling out a new pod'},
+    {n:2,lbl:'Watch the rollout complete',desc:'Wait until the new pod is fully running before validating.',cmd:'kubectl rollout status deployment/api-gateway -n payments',note:'Returns when the new pod is Ready — should take ~15 seconds'},
+    {n:3,lbl:'Verify the fix',desc:'Confirm the new pod is Running with 0 restarts.',cmd:'kubectl get pods -n payments',note:'Look for Running status and RESTARTS=0 on the new pod'},
+    {n:4,lbl:'Confirm logs are clean',desc:'Check the new pod\'s logs — no WARN memory messages.',cmd:'kubectl logs deployment/api-gateway -n payments',note:'Should see clean startup with no memory pressure warnings'},
+  ],
+  f_hints:[
+    {q:'Why use set resources instead of editing YAML?',a:'kubectl set resources patches the live deployment spec directly — no file editing needed. Kubernetes handles the rolling update automatically.'},
+    {q:'What does rollout status do?',a:'It blocks and waits until the deployment finishes rolling out. Shows progress. Exit 0 when done.'},
+    {q:'How do I confirm the OOM is gone?',a:'Check the new pod\'s RESTARTS (should be 0) and run kubectl logs to verify no memory WARN lines appear.'},
+  ],
+  f_check:[
+    {t:'RESTARTS = 0',d:'The new pod should not crash — memory limit is now 256Mi, well above the 108Mi needed'},
+    {t:'STATUS = Running',d:'New pod should be in Running state, not CrashLoopBackOff'},
+    {t:'No memory WARN in logs',d:'Logs should show all routes loaded cleanly, memory well under limit'},
+  ],
+  f_rx:[/kubectl\s+set\s+resources.*api-gateway|kubectl\s+rollout.*api-gateway|kubectl\s+patch.*api-gateway/],
+  f_title:'api-gateway is stable!',
+  f_sub:'Memory limit raised to 256Mi. The pod loaded all 3,102 routes without hitting OOM. Rolling update completed with zero downtime.',
+  f_learn:`Fix applied:
+  kubectl set resources deployment/api-gateway \\
+    -n payments \\
+    --limits=memory=256Mi \\
+    --requests=memory=128Mi
+
+Kubernetes rolled out a new pod automatically.
+New pod: Running, 0 restarts, memory at 108Mi/256Mi ✓
+
+Next step: validate with kubectl get pods and logs.`,
+  // feeds
+  diag_feed:[
+    {who:'sara',text:'api-gateway at restart 11. Current logs show a clean boot — nothing useful.',tag:'bug'},
+    {who:'dev', text:'The pod exits before the error is written to the current run. Use --previous flag.',tag:'info'},
+    {who:'mia', text:'kubectl describe pod also helps — Last State section shows the exit code from the last run.',tag:'info'},
+    {who:'tom', text:'Exit code 137 = OOMKilled. Kernel killed it for exceeding the memory limit.',tag:'info'},
+  ],
+  fix_feed:[
+    {who:'mia', text:'Root cause: OOMKilled. Memory limit is 64Mi but the app needs ~120Mi to load all routes.',tag:'info'},
+    {who:'tom', text:'Use kubectl set resources to patch the deployment. No YAML editing needed.',tag:'info'},
+    {who:'dev', text:'After patching, watch the rollout complete, then verify with kubectl get pods.',tag:'info'},
+  ],
+  // ── SYSTEM PROMPT (STATE-AWARE) ──
+  sysPrompt(fixDone){
+    const state = fixDone
+      ? `CLUSTER STATE: AFTER FIX — api-gateway new pod is Running (memory=256Mi), 0 restarts`
+      : `CLUSTER STATE: BROKEN — api-gateway CrashLoopBackOff (11 restarts, OOMKilled, limit=64Mi)`;
+    return `Simulate a Kubernetes cluster terminal. Output ONLY raw kubectl text. No markdown, no explanation. Be realistic and accurate.
+${state}
+NAMESPACE: payments
+
+--- PRE-FIX RESPONSES (when BROKEN) ---
+
+kubectl get pods -n payments (BROKEN state):
+NAME                     READY   STATUS             RESTARTS   AGE
+api-gateway-7d4b-xkz2    0/1     CrashLoopBackOff   11         62m
+postgres-0               1/1     Running            0          10d
+redis-6b8f-m2k4          1/1     Running            0          10d
+
+kubectl logs api-gateway-7d4b-xkz2 -n payments (WITHOUT --previous):
+Starting API Gateway v2.1.0...
+[INFO] Loading config from /etc/config/gateway.yaml
+[INFO] Connecting to postgres://postgres:5432/payments_db
+[INFO] Memory: 52Mi / 64Mi
+
+kubectl logs api-gateway-7d4b-xkz2 -n payments --previous (or -p):
+Starting API Gateway v2.1.0...
+[INFO] Loading config from /etc/config/gateway.yaml
+[INFO] Memory: 51Mi / 64Mi
+[INFO] Loading route table (3,102 routes)...
+[WARN] Memory pressure: 60Mi / 64Mi
+[WARN] Memory critical: 63Mi / 64Mi
+[FATAL] Out of memory — kernel OOM killer invoked
+Killed
+exit code 137 (OOMKilled — memory limit 64Mi exceeded)
+
+kubectl describe pod api-gateway-7d4b-xkz2 (BROKEN):
+Name: api-gateway-7d4b-xkz2  Namespace: payments
+State: Waiting  Reason: CrashLoopBackOff
+Last State: Terminated  Reason: OOMKilled  Exit Code: 137  Finished: 14:11:18
+Restart Count: 11
+Limits:  cpu: 500m  memory: 64Mi
+Requests: memory: 64Mi  cpu: 250m
+Events: Warning BackOff 3m (x9) kubelet Back-off restarting failed container
+
+kubectl exec api-gateway-7d4b-xkz2 -it -- sh (any exec):
+error: unable to upgrade connection: container not running (CrashLoopBackOff)
+
+--- FIX COMMANDS ---
+
+kubectl set resources deployment/api-gateway -n payments --limits=memory=256Mi (any variant with memory update):
+deployment.apps/api-gateway resource requirements updated
+
+kubectl rollout status deployment/api-gateway -n payments:
+Waiting for deployment "api-gateway" rollout to finish: 0 of 1 updated replicas are available...
+Waiting for rollout to finish: 1 old replicas are pending termination...
+deployment "api-gateway" successfully rolled out
+
+--- POST-FIX RESPONSES (when FIXED) ---
+
+kubectl get pods -n payments (AFTER FIX):
+NAME                     READY   STATUS    RESTARTS   AGE
+api-gateway-9p3k-m2cx    1/1     Running   0          34s
+postgres-0               1/1     Running   0          10d
+redis-6b8f-m2k4          1/1     Running   0          10d
+
+kubectl logs deployment/api-gateway -n payments (AFTER FIX):
+Starting API Gateway v2.1.0...
+[INFO] Loading config from /etc/config/gateway.yaml
+[INFO] Memory: 52Mi / 256Mi
+[INFO] Loading route table (3,102 routes)...
+[INFO] Routes loaded. Memory: 108Mi / 256Mi
+[INFO] Server ready on :8080 ✓  No memory warnings.
+
+kubectl describe pod api-gateway-9p3k-m2cx (AFTER FIX):
+State: Running  Started: 14:45:02
+Restart Count: 0
+Limits: cpu: 500m  memory: 256Mi
+Requests: memory: 128Mi  cpu: 250m
+
+kubectl top pod -n payments (AFTER FIX):
+NAME                  CPU(cores)  MEMORY(bytes)
+api-gateway-9p3k-m2cx  45m         108Mi`;
+  }
+},
+// ─────────────────────────────────────────
+// POD-002  Pending checkout-worker
+// ─────────────────────────────────────────
+{
+  id:'POD-002', title:'checkout-worker stuck Pending — 2h before load test',
+  pri:'ph', priLbl:'🟡 High', technique:'describe → events → set resources → watch',
+  ctx:'checkout-worker has been Pending for 40 minutes. No error shown. The Black Friday load test starts in 2 hours — this pod must be running.',
+  err:`$ kubectl get pods -n checkout
+NAME                        READY   STATUS    RESTARTS   AGE
+checkout-worker-5d8b-r9k    0/1     Pending   0          40m
+(stuck — no error, never starts)`,
+  d_obj:'Find out why the scheduler can\'t place this pod on any node.',
+  d_steps:[
+    {n:1,lbl:'Describe the Pending pod',desc:'The Events section at the bottom shows the scheduler\'s exact reason for rejecting each node.',cmd:'kubectl describe pod checkout-worker-5d8b-r9k -n checkout',note:'Scroll all the way to the bottom — Events section is what you need'},
+    {n:2,lbl:'List namespace events',desc:'Quickly see all recent warnings in the checkout namespace.',cmd:'kubectl get events -n checkout --sort-by=.lastTimestamp',note:'Look for FailedScheduling type warnings'},
+    {n:3,lbl:'Check what the pod requests',desc:'See the exact CPU/memory requests the pod is asking for.',cmd:'kubectl get pod checkout-worker-5d8b-r9k -n checkout -o yaml | grep -A5 resources',note:'Compare this to the node capacity you saw in describe'},
+  ],
+  d_hints:[
+    {q:'What does Pending mean exactly?',a:'Pending = the scheduler has not placed the pod on any node yet. It doesn\'t mean the pod tried and failed — it means it never started.'},
+    {q:'Where do I see the scheduling failure reason?',a:'In kubectl describe, scroll to the very bottom — the Events section. Look for "Warning FailedScheduling". It lists every node and why it was rejected.'},
+    {q:'What is Insufficient cpu?',a:'The pod\'s cpu request exceeds what any node has free. If a pod requests 3800m but nodes only have 2000m total, it can never schedule.'},
+  ],
+  d_check:[
+    {t:'FailedScheduling in Events',d:'Lists each node and the specific reason (Insufficient cpu, Insufficient memory, etc.)'},
+    {t:'0/3 nodes available',d:'Means ALL nodes rejected the pod — not a single-node issue'},
+    {t:'CPU requested vs capacity',d:'If requested > any node\'s total capacity, reducing the request is the fix'},
+  ],
+  d_rx:[/kubectl\s+describe\s+pod.*checkout|kubectl\s+get\s+events.*checkout|kubectl\s+get\s+pod.*-o\s+(yaml|json)/],
+  d_title:'CPU over-request found!',
+  d_sub:'Events showed 3800m CPU requested but all nodes max out at 2000m. The pod can never schedule until the request is reduced.',
+  d_learn:`kubectl describe pod checkout-worker-5d8b-r9k -n checkout
+
+Events section:
+  Warning FailedScheduling 40m (x14)
+  0/3 nodes available: 3 Insufficient cpu.
+  fit failure on worker-1: CPU requested 3800, capacity 2000
+  fit failure on worker-2: CPU requested 3800, capacity 2000
+  fit failure on worker-3: CPU requested 3800, capacity 2000
+
+The deployment spec had 3800m cpu request — more
+than any single node's full CPU capacity.`,
+  f_obj:'Reduce the CPU request to 800m so the pod can schedule on any node.',
+  f_steps:[
+    {n:1,lbl:'Patch the CPU request',desc:'kubectl set resources updates the deployment directly. Kubernetes will create a new pod with the corrected spec.',cmd:'kubectl set resources deployment/checkout-worker -n checkout --requests=cpu=800m --limits=cpu=1000m',note:'Triggers a new pod to be created with the fixed resource spec'},
+    {n:2,lbl:'Watch pod scheduling',desc:'See the pod transition from Pending to ContainerCreating to Running.',cmd:'kubectl get pods -n checkout -w',note:'Press Ctrl+C once you see Running. The -w flag watches in real time'},
+    {n:3,lbl:'Confirm no new failures',desc:'Verify no new FailedScheduling events after the fix.',cmd:'kubectl get events -n checkout --sort-by=.lastTimestamp',note:'Should show no new FailedScheduling — only the old ones from before the fix'},
+  ],
+  f_hints:[
+    {q:'How do I choose the right cpu request?',a:'Request should reflect average usage. Limit should reflect peak. 800m request / 1000m limit is reasonable for a checkout worker.'},
+    {q:'Why does it schedule immediately after the patch?',a:'The new pod has cpu request 800m. Node worker-2 has 1050m free. 800m < 1050m, so it fits. The scheduler places it within seconds.'},
+    {q:'Why is RESTARTS=0 important?',a:'RESTARTS=0 means the pod started cleanly. If the cpu change caused any startup issues, RESTARTS would be > 0.'},
+  ],
+  f_check:[
+    {t:'STATUS = Running',d:'The pod was scheduled and started successfully'},
+    {t:'RESTARTS = 0',d:'Pod started cleanly — no crash after scheduling'},
+    {t:'No new FailedScheduling',d:'Events should show no new scheduling failures after the patch'},
+  ],
+  f_rx:[/kubectl\s+set\s+resources.*checkout|kubectl\s+patch.*checkout/],
+  f_title:'checkout-worker is running!',
+  f_sub:'Reducing cpu request from 3800m to 800m let the scheduler place the pod on worker-2. Load test is back on.',
+  f_learn:`Fix applied:
+  kubectl set resources deployment/checkout-worker \\
+    -n checkout --requests=cpu=800m --limits=cpu=1000m
+
+Pod scheduled on worker-2 within 4 seconds.
+STATUS: Running  RESTARTS: 0
+
+Rule of thumb: cpu request ≈ average load,
+cpu limit ≈ peak load (1.2–2× the request).`,
+  diag_feed:[
+    {who:'mia', text:'checkout-worker Pending for 40 min. No error visible — just frozen.',tag:'bug'},
+    {who:'sara',text:'Pending = scheduler couldn\'t place it. kubectl describe, scroll all the way to Events.',tag:'info'},
+    {who:'tom', text:'Bet it\'s over-requesting CPU. Look at what the pod spec asks for vs node capacity.',tag:'info'},
+    {who:'dev', text:'kubectl get events -n checkout also lists all scheduling failures in the namespace.',tag:'info'},
+  ],
+  fix_feed:[
+    {who:'sara',text:'3800m cpu request — that\'s almost 2 full nodes. Max node capacity is 2000m.',tag:'info'},
+    {who:'mia', text:'Use kubectl set resources to reduce it to 800m. No YAML editing needed.',tag:'info'},
+    {who:'dev', text:'Watch with kubectl get pods -n checkout -w to see it transition to Running.',tag:'info'},
+  ],
+  sysPrompt(fixDone){
+    const state=fixDone?'CLUSTER STATE: AFTER FIX — checkout-worker is Running on worker-2, cpu request=800m':'CLUSTER STATE: BROKEN — checkout-worker Pending, cpu request=3800m exceeds all node capacity of 2000m';
+    return `Simulate a Kubernetes terminal. ONLY raw kubectl text. No markdown.
+${state}
+NAMESPACE: checkout
+
+--- PRE-FIX ---
+
+kubectl get pods -n checkout (BROKEN):
+NAME                        READY   STATUS    RESTARTS   AGE
+checkout-worker-5d8b-r9k    0/1     Pending   0          40m
+checkout-api-7f9c-m3p2      1/1     Running   0          2d
+
+kubectl describe pod checkout-worker-5d8b-r9k (BROKEN):
+Name: checkout-worker-5d8b-r9k  Namespace: checkout  Node: <none>
+Status: Pending
+Requests: cpu: 3800m  memory: 2Gi
+Limits:   cpu: 3800m  memory: 2Gi
+Conditions: PodScheduled: False  Reason: Unschedulable
+Events:
+  Warning  FailedScheduling  40m (x14 over 40m)  default-scheduler
+    0/3 nodes are available: 3 Insufficient cpu.
+    fit failure on node (worker-1): CPU requested: 3800, used: 1200, capacity: 2000
+    fit failure on node (worker-2): CPU requested: 3800, used: 950, capacity: 2000
+    fit failure on node (worker-3): CPU requested: 3800, used: 1750, capacity: 2000
+
+kubectl get events -n checkout (BROKEN):
+LAST SEEN   TYPE      REASON             OBJECT                           MESSAGE
+40m         Warning   FailedScheduling   pod/checkout-worker-5d8b-r9k    0/3 nodes available: 3 Insufficient cpu.
+
+kubectl get pod checkout-worker-5d8b-r9k -n checkout -o yaml | grep -A5 resources:
+      resources:
+        requests:
+          cpu: "3800m"
+          memory: "2Gi"
+        limits:
+          cpu: "3800m"
+          memory: "2Gi"
+
+--- FIX ---
+
+kubectl set resources deployment/checkout-worker -n checkout --requests=cpu=800m --limits=cpu=1000m (any variant reducing cpu):
+deployment.apps/checkout-worker resource requirements updated
+
+--- POST-FIX ---
+
+kubectl get pods -n checkout (AFTER FIX):
+NAME                        READY   STATUS    RESTARTS   AGE
+checkout-worker-7k9p-x4m2   1/1     Running   0          6s
+checkout-api-7f9c-m3p2      1/1     Running   0          2d
+
+kubectl get pods -n checkout -w (AFTER FIX, watch mode):
+NAME                        READY   STATUS              RESTARTS   AGE
+checkout-worker-5d8b-r9k    0/1     Pending             0          41m
+checkout-worker-7k9p-x4m2   0/1     Pending             0          1s
+checkout-worker-7k9p-x4m2   0/1     ContainerCreating   0          2s
+checkout-worker-7k9p-x4m2   1/1     Running             0          6s
+
+kubectl get events -n checkout (AFTER FIX, sorted):
+LAST SEEN   TYPE      REASON             OBJECT                           MESSAGE
+42m         Warning   FailedScheduling   pod/checkout-worker-5d8b-r9k    (old, before fix)
+6s          Normal    Scheduled          pod/checkout-worker-7k9p-x4m2   Successfully assigned to worker-2
+4s          Normal    Pulled             pod/checkout-worker-7k9p-x4m2   Image already present
+3s          Normal    Started            pod/checkout-worker-7k9p-x4m2   Started container`;
+  }
+},
+// ─────────────────────────────────────────
+// POD-003  Distroless payment-svc wrong env var
+// ─────────────────────────────────────────
+{
+  id:'POD-003', title:'payment-svc wrong totals — distroless, can\'t exec',
+  pri:'ph', priLbl:'🟡 High', technique:'debug --target (ephemeral) → set env → rollout',
+  ctx:'payment-svc returns incorrect checkout totals. You try kubectl exec to check env vars but it\'s a distroless image — no shell. You need to inspect it without restarting the live pod.',
+  err:`$ kubectl exec payment-svc-6f9b-w4kx -n payments -it -- sh
+OCI runtime exec failed:
+exec: "sh": executable file not found in $PATH
+
+$ kubectl exec payment-svc-6f9b-w4kx -n payments -it -- bash
+OCI runtime exec failed:
+exec: "bash": executable file not found in $PATH`,
+  d_obj:'Inject a busybox ephemeral container using kubectl debug to inspect the running pod\'s environment variables.',
+  d_steps:[
+    {n:1,lbl:'Confirm exec is impossible',desc:'Try kubectl exec to verify the distroless image has no shell at all.',cmd:'kubectl exec payment-svc-6f9b-w4kx -n payments -it -- sh',note:'This will fail — that\'s expected. Now you know exec won\'t work.'},
+    {n:2,lbl:'Inject an ephemeral debug container',desc:'kubectl debug adds a busybox sidecar to the running pod. --target shares the process namespace so you can inspect the main container\'s env and processes.',cmd:'kubectl debug -it payment-svc-6f9b-w4kx -n payments --image=busybox:1.28 --target=payment-svc',note:'You\'ll get a busybox shell prompt. The pod is NOT restarted.'},
+    {n:3,lbl:'Check env vars (run inside busybox)',desc:'Look for the PAYMENT_ variables — one of them contains the wrong value.',cmd:'env | grep PAYMENT',note:'Run this INSIDE the busybox shell after step 2 connects'},
+  ],
+  d_hints:[
+    {q:'Why does exec fail completely?',a:'Distroless images contain only the app binary and its runtime. No sh, bash, ls, cat — nothing. kubectl exec requires a shell to be present.'},
+    {q:'What does --target do?',a:'--target=payment-svc shares the process namespace of the named container. From busybox you can run ps to see the main container\'s processes and env to see its environment variables.'},
+    {q:'What am I looking for in the env vars?',a:'Look at PAYMENT_DISCOUNT_CAP — it should be 0.00 (no discount). If it shows 50.00, that\'s a $50 phantom discount on every order.'},
+  ],
+  d_check:[
+    {t:'PAYMENT_DISCOUNT_CAP value',d:'Should be 0.00. A value of 50.00 means every order gets a $50 phantom discount'},
+    {t:'Process namespace sharing',d:'ps aux inside busybox should show the Node.js process from the main container'},
+    {t:'Ephemeral container added',d:'kubectl describe after injecting shows a new "Ephemeral Containers" section'},
+  ],
+  d_rx:[/kubectl\s+debug.*--target|kubectl\s+debug.*--image.*busybox/],
+  d_title:'Wrong env var found!',
+  d_sub:'env | grep PAYMENT inside busybox showed PAYMENT_DISCOUNT_CAP=50.00. It should be 0.00. Every order has been getting a phantom $50 discount.',
+  d_learn:`kubectl debug -it payment-svc-6f9b-w4kx \\
+  --image=busybox:1.28 --target=payment-svc
+
+Inside busybox → env | grep PAYMENT:
+  PAYMENT_DISCOUNT_CAP=50.00  ← WRONG
+  PAYMENT_ROUNDING_MODE=HALF_UP
+  PAYMENT_CURRENCY=USD
+
+A bad deploy set DISCOUNT_CAP to 50.00 instead of 0.00.
+Every checkout total was reduced by $50.`,
+  f_obj:'Fix PAYMENT_DISCOUNT_CAP to 0.00 on the deployment and verify the corrected value after rollout.',
+  f_steps:[
+    {n:1,lbl:'Fix the env var',desc:'kubectl set env updates the deployment and triggers an automatic rolling pod replacement.',cmd:'kubectl set env deployment/payment-svc -n payments PAYMENT_DISCOUNT_CAP=0.00',note:'Kubernetes will replace the running pod with a new one using the corrected env var'},
+    {n:2,lbl:'Watch the rolling update',desc:'Wait for the new pod to be Ready before checking the env var.',cmd:'kubectl rollout status deployment/payment-svc -n payments',note:'Exits when the new pod is fully Running and Ready'},
+    {n:3,lbl:'Verify the corrected value',desc:'Exec into the new deployment and confirm DISCOUNT_CAP is 0.00.',cmd:'kubectl exec deployment/payment-svc -n payments -- env | grep DISCOUNT',note:'Note: this works on the new pod because it\'s no longer distroless — wait, it is. Use describe or logs instead.'},
+    {n:4,lbl:'Confirm pod is healthy',desc:'Check the new pod is Running with 0 restarts.',cmd:'kubectl get pods -n payments',note:'New pod should show STATUS=Running and RESTARTS=0'},
+  ],
+  f_hints:[
+    {q:'Why does set env trigger a pod replacement?',a:'Changing an env var is a spec change. Kubernetes performs a rolling update: starts a new pod with the new value, waits for it to be Ready, then terminates the old pod.'},
+    {q:'How do I verify the env var is correct after rollout?',a:'For distroless: use kubectl describe pod and look at the Environment section under Containers. Or check application logs — if the discount logic is working correctly, logs will confirm.'},
+    {q:'How long does the rolling update take?',a:'Usually 10–30 seconds. kubectl rollout status blocks until it\'s done. The old pod keeps serving traffic until the new one is healthy.'},
+  ],
+  f_check:[
+    {t:'PAYMENT_DISCOUNT_CAP=0.00',d:'Confirm in kubectl describe pod under Environment section'},
+    {t:'Rollout succeeded',d:'kubectl rollout status should return "successfully rolled out"'},
+    {t:'Zero restarts',d:'New pod RESTARTS=0 means it started cleanly with the new env var'},
+  ],
+  f_rx:[/kubectl\s+set\s+env.*payment.*DISCOUNT|kubectl\s+set\s+env.*payment.*CAP/],
+  f_title:'payment-svc corrected!',
+  f_sub:'PAYMENT_DISCOUNT_CAP set to 0.00. Rolling update completed with zero downtime. Checkout totals are now correct.',
+  f_learn:`Fix applied:
+  kubectl set env deployment/payment-svc \\
+    -n payments PAYMENT_DISCOUNT_CAP=0.00
+
+Rolling update: old pod replaced by new one with
+correct env var. Zero downtime.
+
+Verify: kubectl describe pod <new-pod> -n payments
+  → Environment: PAYMENT_DISCOUNT_CAP: 0.00 ✓`,
+  diag_feed:[
+    {who:'dev', text:'payment-svc is on a distroless image. exec will always fail — no shell at all.',tag:'bug'},
+    {who:'sara',text:'Use kubectl debug with --target to inject a busybox ephemeral container. Stable since k8s 1.25.',tag:'info'},
+    {who:'tom', text:'Do NOT restart the pod — it\'s serving live traffic. Ephemeral containers attach in-place.',tag:'info'},
+    {who:'mia', text:'Once inside busybox: env | grep PAYMENT — look for any wrong values in the payment config.',tag:'info'},
+  ],
+  fix_feed:[
+    {who:'dev', text:'PAYMENT_DISCOUNT_CAP=50.00 is the bug. Should be 0.00. Every order is getting a phantom $50 off.',tag:'info'},
+    {who:'sara',text:'kubectl set env triggers a rolling update automatically. Zero downtime.',tag:'info'},
+    {who:'mia', text:'After rollout, check kubectl describe pod to verify the corrected value in the Environment section.',tag:'info'},
+  ],
+  sysPrompt(fixDone){
+    const state=fixDone?'CLUSTER STATE: AFTER FIX — payment-svc new pod Running, PAYMENT_DISCOUNT_CAP=0.00':'CLUSTER STATE: BROKEN — payment-svc Running on distroless, PAYMENT_DISCOUNT_CAP incorrectly set to 50.00';
+    return `Simulate a Kubernetes terminal. ONLY raw kubectl text. No markdown.
+${state}
+NAMESPACE: payments
+
+kubectl exec payment-svc-6f9b-w4kx -it -- sh (or bash, or any exec command):
+OCI runtime exec failed: exec failed: unable to start container process: exec: "sh": executable file not found in $PATH: unknown
+
+kubectl debug -it payment-svc-6f9b-w4kx --image=busybox:1.28 --target=payment-svc (or any --target or busybox debug):
+Targeting container "payment-svc". If you don't see processes from this container it may be because the container runtime doesn't support this feature.
+Defaulting debug container name to debugger-4xm7k.
+If you don't see a command prompt, try pressing enter.
+/ #
+
+Inside busybox shell (after debug):
+env | grep PAYMENT:
+PAYMENT_SERVICE_URL=http://payments-api:8080
+PAYMENT_ROUNDING_MODE=HALF_UP
+PAYMENT_CURRENCY=USD
+PAYMENT_DISCOUNT_CAP=50.00
+ps aux:
+    1 root      0:02 node /app/server.js
+   47 root      0:00 sh
+   52 root      0:00 ps aux
+
+kubectl describe pod payment-svc-6f9b-w4kx (BEFORE FIX):
+Environment:
+  PAYMENT_SERVICE_URL:    http://payments-api:8080
+  PAYMENT_DISCOUNT_CAP:   50.00
+  PAYMENT_ROUNDING_MODE:  HALF_UP
+  PAYMENT_CURRENCY:       USD
+
+kubectl set env deployment/payment-svc -n payments PAYMENT_DISCOUNT_CAP=0.00 (fix command):
+deployment.apps/payment-svc env updated
+
+kubectl rollout status deployment/payment-svc -n payments:
+Waiting for deployment "payment-svc" rollout to finish: 0 of 1 updated replicas are available...
+deployment "payment-svc" successfully rolled out
+
+kubectl get pods -n payments (AFTER FIX):
+NAME                    READY   STATUS    RESTARTS   AGE
+payment-svc-9k2p-m4rx   1/1     Running   0          18s
+postgres-0              1/1     Running   0          30d
+
+kubectl describe pod payment-svc-9k2p-m4rx -n payments (AFTER FIX):
+Environment:
+  PAYMENT_SERVICE_URL:    http://payments-api:8080
+  PAYMENT_DISCOUNT_CAP:   0.00
+  PAYMENT_ROUNDING_MODE:  HALF_UP
+  PAYMENT_CURRENCY:       USD
+
+kubectl exec deployment/payment-svc -n payments -- env | grep DISCOUNT (AFTER FIX, exec now possible on new pod if it has shell, but it's still distroless):
+OCI runtime exec failed: exec: "env": executable file not found in $PATH
+(use kubectl describe pod instead to verify env vars on distroless images)`;
+  }
+},
+// ─────────────────────────────────────────
+// POD-004  config-loader crash + missing secret
+// ─────────────────────────────────────────
+{
+  id:'POD-004', title:'config-loader crashes in 200ms — exec impossible',
+  pri:'ph', priLbl:'🟡 High', technique:'debug --copy-to → create secret → verify',
+  ctx:'config-loader is CrashLoopBackOff at restart 14. It exits within 200ms. kubectl exec always fails because the container terminates before the connection is established.',
+  err:`$ kubectl exec config-loader-8d7c-p3nx -n tools -it -- sh
+error: unable to upgrade connection:
+container not running (CrashLoopBackOff)
+
+$ kubectl logs config-loader-8d7c-p3nx -n tools
+panic: open /etc/secrets/db-creds: no such file`,
+  d_obj:'Create a copy of the pod with the command replaced by sh, then inspect the filesystem to find what\'s missing.',
+  d_steps:[
+    {n:1,lbl:'Read the crash logs',desc:'We already have the panic message — confirm the exact path that\'s missing.',cmd:'kubectl logs config-loader-8d7c-p3nx -n tools',note:'Shows the panic: open /etc/secrets/db-creds: no such file'},
+    {n:2,lbl:'Check the pod volumes',desc:'See which Secret the pod expects to be mounted at /etc/secrets.',cmd:'kubectl describe pod config-loader-8d7c-p3nx -n tools',note:'Look at Volumes section and Events — does it say "secret not found"?'},
+    {n:3,lbl:'Create a copy with a shell',desc:'--copy-to creates a duplicate pod with the entrypoint replaced by sh. This runs BEFORE the app crashes, giving you a shell to inspect the filesystem.',cmd:'kubectl debug config-loader-8d7c-p3nx -n tools -it --copy-to=config-loader-debug --container=config-loader -- sh',note:'You\'ll get a sh prompt inside the copy. The app doesn\'t run — sh does instead.'},
+    {n:4,lbl:'Inspect the secret mount',desc:'Check if /etc/secrets has any files.',cmd:'ls /etc/secrets',note:'Run INSIDE the debug copy shell. Empty = the Secret object doesn\'t exist in the namespace.'},
+  ],
+  d_hints:[
+    {q:'Why does exec always fail?',a:'The pod exits in under 200ms. kubectl exec tries to connect to the running container, but by the time it does, the container has already exited.'},
+    {q:'What does --copy-to do?',a:'It creates a new pod (the copy) with the same spec as the original, but with the container\'s command replaced by your -- sh. The app never runs in the copy.'},
+    {q:'Why is /etc/secrets empty?',a:'The Secret volume is mounted (the directory exists) but the Secret object itself was never created in the tools namespace. Kubernetes can\'t mount files from a non-existent Secret.'},
+  ],
+  d_check:[
+    {t:'ls /etc/secrets result',d:'Empty = Secret object missing. Files present = Secret exists but app can\'t read it.'},
+    {t:'"secret not found" in Events',d:'kubectl describe shows kubelet error: secret "db-creds" not found'},
+    {t:'Volume spec in describe',d:'SecretName: db-creds  Optional: false — this Secret MUST exist for the pod to start'},
+  ],
+  d_rx:[/kubectl\s+debug.*--copy-to/],
+  d_title:'Missing Secret confirmed!',
+  d_sub:'ls /etc/secrets inside the debug copy showed an empty directory. The db-creds Secret was never created in the tools namespace.',
+  d_learn:`kubectl debug config-loader-8d7c-p3nx -it \\
+  --copy-to=config-loader-debug \\
+  --container=config-loader -- sh
+
+Inside the copy:
+  ls /etc/secrets → (empty — Secret doesn't exist)
+
+kubectl describe showed:
+  Events: Warning Failed (x14)
+  kubelet: secret "db-creds" not found
+
+Root cause: the db-creds Secret object was
+never created in the tools namespace.`,
+  f_obj:'Create the missing db-creds Secret in the tools namespace, then clean up the debug copy and verify the real pod starts.',
+  f_steps:[
+    {n:1,lbl:'Create the missing Secret',desc:'Create the db-creds Secret that the pod is looking for. Kubernetes will automatically mount it into the pod\'s /etc/secrets volume.',cmd:'kubectl create secret generic db-creds --from-literal=password=Sup3rS3cr3t! --from-literal=username=config_user -n tools',note:'Once created, Kubernetes mounts it automatically — no pod restart needed'},
+    {n:2,lbl:'Verify the Secret exists',desc:'Confirm the secret was created in the right namespace.',cmd:'kubectl get secrets -n tools',note:'Should list db-creds as type Opaque with 2 data items'},
+    {n:3,lbl:'Clean up the debug copy',desc:'Always delete the pod copy — it is not cleaned up automatically.',cmd:'kubectl delete pod config-loader-debug -n tools',note:'Important: debug copies consume cluster resources if left running'},
+    {n:4,lbl:'Watch the real pod recover',desc:'The real pod will retry after its backoff delay and find the Secret on its next start.',cmd:'kubectl get pods -n tools -w',note:'Watch it transition from CrashLoopBackOff to Running after backoff timer expires'},
+  ],
+  f_hints:[
+    {q:'Why does creating the Secret fix the pod automatically?',a:'Kubernetes watches for Secret changes. Once the db-creds Secret exists, kubelet can mount it into the pod\'s volume. On the next restart (after backoff), the pod finds the file and starts cleanly.'},
+    {q:'Why must I delete the debug copy?',a:'Debug copies are real pods that consume CPU and memory. They are not cleaned up automatically. Always kubectl delete pod <copy-name> when done.'},
+    {q:'How long until the real pod recovers?',a:'CrashLoopBackOff uses exponential backoff (10s, 20s, 40s...). After 14 restarts it may wait up to 5 minutes. You can force it by deleting the pod: kubectl delete pod config-loader-8d7c-p3nx -n tools'},
+  ],
+  f_check:[
+    {t:'Secret listed in namespace',d:'kubectl get secrets -n tools should show db-creds Opaque 2'},
+    {t:'Debug copy deleted',d:'kubectl get pods -n tools should NOT show config-loader-debug'},
+    {t:'Real pod transitions to Running',d:'After backoff (or force-delete), the real pod should start cleanly'},
+  ],
+  f_rx:[/kubectl\s+create\s+secret.*db-creds|kubectl\s+create\s+secret.*tools/],
+  f_title:'config-loader is running!',
+  f_sub:'The db-creds Secret now exists. Kubernetes mounted it automatically. The pod started cleanly on its next retry.',
+  f_learn:`Fix applied:
+  kubectl create secret generic db-creds \\
+    --from-literal=password=Sup3rS3cr3t! \\
+    --from-literal=username=config_user \\
+    -n tools
+
+Kubernetes mounted the secret file automatically.
+config-loader logs: "database connected ✓"
+
+Cleanup:
+  kubectl delete pod config-loader-debug -n tools
+
+Prevention: run kubectl get secrets -n <ns>
+as a pre-flight check before deploying apps
+that require specific Secret objects.`,
+  diag_feed:[
+    {who:'tom', text:'config-loader at restart 14. Exits in <200ms. exec always fails.',tag:'bug'},
+    {who:'mia', text:'Use kubectl debug --copy-to to make a copy with the command replaced by sh.',tag:'info'},
+    {who:'sara',text:'Logs already show it: open /etc/secrets/db-creds: no such file. Secret is missing.',tag:'info'},
+    {who:'dev', text:'Inside the copy shell, run ls /etc/secrets to see what\'s actually mounted.',tag:'info'},
+  ],
+  fix_feed:[
+    {who:'tom', text:'ls /etc/secrets was empty. The db-creds Secret was never created in the tools namespace.',tag:'info'},
+    {who:'mia', text:'kubectl create secret generic db-creds -n tools. Once created, Kubernetes mounts it automatically.',tag:'info'},
+    {who:'dev', text:'After creating the secret, delete the debug copy. Then watch the real pod recover.',tag:'info'},
+  ],
+  sysPrompt(fixDone){
+    const state=fixDone?'CLUSTER STATE: AFTER FIX — db-creds Secret created in tools namespace, config-loader is Running':'CLUSTER STATE: BROKEN — config-loader CrashLoopBackOff (14 restarts), db-creds Secret does not exist in tools namespace';
+    return `Simulate a Kubernetes terminal. ONLY raw kubectl text. No markdown.
+${state}
+NAMESPACE: tools
+
+kubectl get pods -n tools (BROKEN):
+NAME                      READY   STATUS             RESTARTS   AGE
+config-loader-8d7c-p3nx   0/1     CrashLoopBackOff   14         48m
+
+kubectl logs config-loader-8d7c-p3nx (BROKEN):
+[config-loader] v1.3.0 starting...
+[config-loader] Reading /etc/secrets/db-creds...
+panic: open /etc/secrets/db-creds: no such file or directory
+goroutine 1 [running]: main.loadSecrets(...)
+exit status 2
+
+kubectl exec config-loader-8d7c-p3nx -it -- sh (any exec, BROKEN):
+error: unable to upgrade connection: container not running (pod in CrashLoopBackOff)
+
+kubectl describe pod config-loader-8d7c-p3nx (BROKEN):
+Name: config-loader-8d7c-p3nx  Namespace: tools
+State: Waiting  Reason: CrashLoopBackOff
+Last State: Terminated  Exit Code: 2  Restart Count: 14
+Mounts: /etc/secrets from db-creds-volume (ro)
+Volumes:
+  db-creds-volume:
+    Type: Secret  SecretName: db-creds  Optional: false
+Events:
+  Warning  Failed  48m (x14)  kubelet  secret "db-creds" not found
+
+kubectl debug config-loader-8d7c-p3nx -it --copy-to=config-loader-debug --container=config-loader -- sh (any --copy-to):
+Defaulting debug container name to debugger.
+If you don't see a command prompt, try pressing enter.
+/ #
+
+Inside debug copy shell:
+ls /etc/secrets: (empty — directory exists but no files, Secret object doesn't exist)
+ls /app: config-loader  main.go
+env | grep DB: DB_HOST=postgres.tools.svc.cluster.local  DB_PORT=5432
+cat /etc/secrets/db-creds: cat: /etc/secrets/db-creds: No such file or directory
+
+kubectl get secrets -n tools (BEFORE FIX):
+NAME                  TYPE     DATA   AGE
+default-token-xyz9r   Opaque   3      60d
+(db-creds is NOT listed)
+
+kubectl create secret generic db-creds --from-literal=password=Sup3rS3cr3t! --from-literal=username=config_user -n tools (fix):
+secret/db-creds created
+
+kubectl get secrets -n tools (AFTER FIX):
+NAME                  TYPE     DATA   AGE
+default-token-xyz9r   Opaque   3      60d
+db-creds              Opaque   2      3s
+
+kubectl delete pod config-loader-debug -n tools:
+pod "config-loader-debug" deleted
+
+kubectl get pods -n tools (AFTER FIX, may need to wait for backoff):
+NAME                      READY   STATUS    RESTARTS   AGE
+config-loader-8d7c-p3nx   1/1     Running   0          8s
+
+kubectl delete pod config-loader-8d7c-p3nx -n tools (force restart to skip backoff):
+pod "config-loader-8d7c-p3nx" deleted
+
+kubectl get pods -n tools -w (watch mode AFTER FIX):
+NAME                      READY   STATUS              RESTARTS   AGE
+config-loader-8d7c-p3nx   0/1     CrashLoopBackOff    14         49m
+config-loader-8d7c-p3nx   0/1     Terminating         14         49m
+config-loader-9x4p-k2mq   0/1     ContainerCreating   0          2s
+config-loader-9x4p-k2mq   1/1     Running             0          5s
+
+kubectl logs config-loader-8d7c-p3nx (AFTER FIX):
+[config-loader] v1.3.0 starting...
+[config-loader] Reading /etc/secrets/db-creds... OK
+[config-loader] Connecting to postgres.tools.svc.cluster.local:5432
+[config-loader] Database connected ✓
+[config-loader] Configuration loaded successfully`;
+  }
+},
+// ─────────────────────────────────────────
+// POD-005  Node-level DNS failure
+// ─────────────────────────────────────────
+{
+  id:'POD-005', title:'DNS failures on all pods on worker-node-3',
+  pri:'pc', priLbl:'🔴 Critical', technique:'debug node/ + sysadmin → systemctl restart → verify',
+  ctx:'Every pod on worker-node-3 has DNS resolution failures. CoreDNS pods are healthy. Other nodes work fine. The issue is at the node level — pod-level tools cannot reach it.',
+  err:`# From pods on worker-node-3:
+$ nslookup kubernetes.default.svc.cluster.local
+;; connection timed out; no servers could be reached
+
+# Only affects worker-node-3 (3 pods affected)
+# CoreDNS pods on other nodes: all healthy`,
+  d_obj:'Open a privileged debug shell on worker-node-3, check /host/etc/resolv.conf, and identify why DNS is broken.',
+  d_steps:[
+    {n:1,lbl:'Confirm only worker-node-3 is affected',desc:'See which pods are on the broken node.',cmd:'kubectl get pods -o wide --all-namespaces | grep worker-node-3',note:'Confirms the issue is node-specific, not a global DNS problem'},
+    {n:2,lbl:'Open a privileged node shell',desc:'kubectl debug node/ creates a pod on the node itself with host namespaces. --profile=sysadmin grants privileges for chroot.',cmd:'kubectl debug node/worker-node-3 -it --image=ubuntu --profile=sysadmin',note:'The node filesystem is mounted at /host inside this debug pod'},
+    {n:3,lbl:'Check the node\'s DNS config',desc:'Run inside the node shell. If resolv.conf is empty, DNS is broken at the OS level.',cmd:'cat /host/etc/resolv.conf',note:'Run INSIDE the node shell. Should show "nameserver 10.96.0.10" — if empty, that\'s the root cause.'},
+    {n:4,lbl:'Check systemd-resolved status',desc:'See why resolv.conf is empty.',cmd:'chroot /host systemctl status systemd-resolved',note:'Run INSIDE the node shell. Needs --profile=sysadmin to work. Should show if service is failed.'},
+  ],
+  d_hints:[
+    {q:'Why can\'t I use kubectl exec for this?',a:'kubectl exec works at the pod level. Node-level services (systemd, resolv.conf) are not visible from inside pods. kubectl debug node/ creates a pod on the node with host namespaces.'},
+    {q:'What is /host?',a:'Inside the node debug pod, the node\'s root filesystem is mounted at /host. cat /host/etc/resolv.conf reads the node\'s DNS config, not the pod\'s.'},
+    {q:'Why does chroot /host fail without --profile=sysadmin?',a:'chroot requires CAP_SYS_CHROOT capability. Without --profile=sysadmin the debug pod is unprivileged and chroot returns "Operation not permitted".'},
+  ],
+  d_check:[
+    {t:'/host/etc/resolv.conf content',d:'Should contain "nameserver 10.96.0.10". Empty file = DNS config is gone.'},
+    {t:'systemd-resolved status',d:'Active: failed = service crashed and took resolv.conf with it'},
+    {t:'Error message',d:'"Failed to parse DNS server address" means a bad config value crashed the service'},
+  ],
+  d_rx:[/kubectl\s+debug\s+node\/worker-node-3|kubectl\s+debug\s+node\//],
+  d_title:'Node DNS config wiped!',
+  d_sub:'cat /host/etc/resolv.conf was empty. systemd-resolved had failed, taking the DNS configuration with it.',
+  d_learn:`kubectl debug node/worker-node-3 -it \\
+  --image=ubuntu --profile=sysadmin
+
+Inside node shell:
+  cat /host/etc/resolv.conf → (empty!)
+  
+  chroot /host systemctl status systemd-resolved
+  → Active: failed
+    Error: Failed to parse DNS server address
+
+systemd-resolved crashed and emptied resolv.conf.
+All pods on this node lost DNS resolution.`,
+  f_obj:'Restart systemd-resolved on the node to restore /etc/resolv.conf, verify DNS is working, then clean up the debug pod.',
+  f_steps:[
+    {n:1,lbl:'Restart systemd-resolved',desc:'Run inside the node shell. This restores the DNS service and regenerates resolv.conf.',cmd:'chroot /host systemctl restart systemd-resolved',note:'Run INSIDE the node debug shell. No output on success.'},
+    {n:2,lbl:'Verify resolv.conf is restored',desc:'Check that the nameserver line is back.',cmd:'cat /host/etc/resolv.conf',note:'Run INSIDE the node shell. Should now show "nameserver 10.96.0.10"'},
+    {n:3,lbl:'Confirm service is healthy',desc:'Verify systemd-resolved is actively running.',cmd:'chroot /host systemctl status systemd-resolved',note:'Run INSIDE the node shell. Should show "Active: active (running)"'},
+    {n:4,lbl:'Exit node shell and clean up',desc:'Exit the shell, then delete the debug pod from your regular terminal.',cmd:'kubectl delete pod node-debugger-worker-node-3-r4px8',note:'IMPORTANT: node debug pods are NOT cleaned up automatically — always delete them'},
+  ],
+  f_hints:[
+    {q:'What does chroot /host do?',a:'chroot changes the root directory to /host, making it look like you\'re running on the node directly. After chroot, systemctl commands run the node\'s actual systemd.'},
+    {q:'How do I know which debug pod to delete?',a:'kubectl debug node/ prints the pod name when it creates it: "Creating debugging pod node-debugger-worker-node-3-XXXX". Note it down, or run kubectl get pods to find it.'},
+    {q:'Do pods recover automatically after DNS is fixed?',a:'Yes — once resolv.conf is restored, DNS queries from pods on that node start working immediately. No pod restart needed.'},
+  ],
+  f_check:[
+    {t:'resolv.conf has nameserver line',d:'"nameserver 10.96.0.10" should be present in /host/etc/resolv.conf'},
+    {t:'systemd-resolved active (running)',d:'Status should show Active: active (running), not failed'},
+    {t:'Debug pod deleted',d:'kubectl get pods should NOT show the node-debugger pod after cleanup'},
+  ],
+  f_rx:[/chroot.*restart.*resolved|systemctl.*restart.*resolved|kubectl\s+delete\s+pod\s+node-debugger/],
+  f_title:'DNS restored on worker-node-3!',
+  f_sub:'Restarting systemd-resolved repopulated /etc/resolv.conf. All pods on the node regained DNS resolution immediately.',
+  f_learn:`Fix applied (inside node shell):
+  chroot /host systemctl restart systemd-resolved
+
+Verified:
+  cat /host/etc/resolv.conf
+  → nameserver 10.96.0.10 ✓
+  → search default.svc.cluster.local ✓
+
+All pods on worker-node-3 regained DNS instantly.
+
+Cleanup:
+  kubectl delete pod node-debugger-worker-node-3-r4px8
+
+Official docs note:
+  • Node filesystem mounted at /host
+  • --profile=sysadmin required for chroot
+  • Always delete node debug pods after use`,
+  diag_feed:[
+    {who:'sara',text:'DNS failures on all 3 pods on worker-node-3. CoreDNS healthy. Other nodes fine.',tag:'bug'},
+    {who:'mia', text:'kubectl debug node/worker-node-3 to get a shell with host namespaces. Add --profile=sysadmin.',tag:'info'},
+    {who:'tom', text:'Node filesystem is at /host inside the debug pod. Check cat /host/etc/resolv.conf first.',tag:'info'},
+    {who:'dev', text:'You\'ll need sysadmin profile to run chroot /host. Without it, chroot will fail with permission error.',tag:'info'},
+  ],
+  fix_feed:[
+    {who:'mia', text:'/host/etc/resolv.conf is empty! systemd-resolved crashed and took the DNS config with it.',tag:'info'},
+    {who:'tom', text:'chroot /host systemctl restart systemd-resolved will restore it. Verify with cat /host/etc/resolv.conf after.',tag:'info'},
+    {who:'sara',text:'After fixing, delete the node debug pod — it\'s not auto-cleaned.',tag:'info'},
+  ],
+  sysPrompt(fixDone){
+    const state=fixDone?'CLUSTER STATE: AFTER FIX — systemd-resolved restarted, /host/etc/resolv.conf restored, DNS working':'CLUSTER STATE: BROKEN — worker-node-3 has empty /host/etc/resolv.conf, systemd-resolved failed';
+    return `Simulate a Kubernetes cluster and node terminal. ONLY raw terminal text. No markdown.
+${state}
+
+kubectl get pods -o wide --all-namespaces | grep worker-node-3:
+payments   payment-svc-x2p4    1/1   Running   0   2h   10.244.3.12   worker-node-3
+checkout   checkout-api-w9k2   1/1   Running   0   2h   10.244.3.14   worker-node-3
+tools      metrics-7bc2-p3kx   1/1   Running   0   2h   10.244.3.15   worker-node-3
+
+kubectl get nodes:
+NAME            STATUS   ROLES           AGE   VERSION
+control-plane   Ready    control-plane   15d   v1.32.0
+worker-node-1   Ready    <none>          15d   v1.32.0
+worker-node-2   Ready    <none>          15d   v1.32.0
+worker-node-3   Ready    <none>          15d   v1.32.0
+
+kubectl debug node/worker-node-3 -it --image=ubuntu --profile=sysadmin (WITH sysadmin):
+Creating debugging pod node-debugger-worker-node-3-r4px8 with container debugger on node worker-node-3.
+If you don't see a command prompt, try pressing enter.
+root@worker-node-3:/#
+
+kubectl debug node/worker-node-3 -it --image=ubuntu (WITHOUT --profile, no sysadmin):
+Creating debugging pod node-debugger-worker-node-3-r4px8 with container debugger on node worker-node-3.
+root@worker-node-3:/# 
+(warning: pod is not privileged — chroot /host will fail)
+
+--- INSIDE NODE SHELL (BROKEN STATE) ---
+ls /host: bin  boot  dev  etc  home  lib  lib64  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var
+cat /host/etc/resolv.conf: (empty file — no output)
+chroot /host (without sysadmin profile): chroot: cannot change root directory to '/host': Operation not permitted
+chroot /host systemctl status systemd-resolved (with sysadmin):
+● systemd-resolved.service - Network Name Resolution
+   Loaded: loaded (/lib/systemd/system/systemd-resolved.service)
+   Active: failed (Result: exit-code) since Fri 2026-03-20 12:14:02 UTC; 3h ago
+   Process: ExecStart=/lib/systemd/systemd-resolved (code=exited, status=1/FAILURE)
+   Error: Failed to parse DNS server address
+
+--- FIX COMMANDS (inside node shell) ---
+chroot /host systemctl restart systemd-resolved (with sysadmin):
+(restarts successfully — no output means success)
+
+--- INSIDE NODE SHELL (AFTER FIX) ---
+cat /host/etc/resolv.conf (AFTER restart):
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+
+chroot /host systemctl status systemd-resolved (AFTER restart):
+● systemd-resolved.service - Network Name Resolution
+   Active: active (running) since Fri 2026-03-20 15:44:01 UTC; 8s ago
+   Main PID: 31847
+
+--- CLEANUP ---
+kubectl delete pod node-debugger-worker-node-3-r4px8:
+pod "node-debugger-worker-node-3-r4px8" deleted
+
+kubectl get pods (after cleanup — no debug pod):
+(debug pod is gone)`;
+  }
+}
+];
+
+/* ──────────────────────────────
+   STATE
+────────────────────────────── */
+let S={
+  cur:0,
+  // phase per scenario: 'diag' | 'fix' | 'done'
+  ph:{},
+  // whether fix command has been run (for stateful system prompt)
+  fixApplied:{},
+  cmds:0, hints:0,
+  hist:[], histIdx:-1,
+  loading:false, conv:[],
+  t0:Date.now()
+};
+const ph=(i)=>S.ph[i]||'diag';
+const allDone=()=>SC.every((_,i)=>ph(i)==='done');
+
+/* ──────────────────────────────
+   SCREENS
+────────────────────────────── */
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function goHome(){show('home');renderHome();}
+
+/* ──────────────────────────────
+   HOME
+────────────────────────────── */
+function renderHome(){
+  document.getElementById('hcards').innerHTML=SC.map((sc,i)=>{
+    const p=ph(i);
+    const sc_cls=p==='done'?'done':p==='fix'?'in-progress':'';
+    const st=p==='done'?'stag-done':p==='fix'?'stag-diag':'stag-new';
+    const sl=p==='done'?'✓ fully fixed':p==='fix'?'⟳ fixing':'not started';
+    return `<div class="hcard ${sc_cls}" onclick="startScenario(${i})">
+      <div class="hnum">${i+1}</div>
+      <div class="hcard-body"><div class="hct">${sc.title}</div><div class="hcd">${sc.ctx.slice(0,72)}…</div></div>
+      <div class="hcard-meta"><span class="ttag">${sc.technique.split('→')[0].trim()}</span><span class="stag ${st}">${sl}</span></div>
+    </div>`;
+  }).join('');
+}
+
+/* ──────────────────────────────
+   SCENARIO LOAD
+────────────────────────────── */
+function startScenario(idx){show('lab');loadScenario(idx);}
+
+function loadScenario(idx){
+  S.cur=idx; S.conv=[]; S.hist=[]; S.histIdx=-1; S._hi=0;
+  const sc=SC[idx]; const p=ph(idx);
+  updateNav(); renderLeft(idx); renderPbar(idx); clearTerm();
+  tSys(`${sc.id}: ${sc.title}`,'sys');
+  if(p==='fix'){tSys('Phase 1 complete. Phase 2: Fix — guide updated on the left.','fsys');}
+  else if(p==='done'){tSys('This incident is fully resolved. You can re-run commands to review.','vsys');}
+  else{tSys('Phase 1: Diagnose — follow the Steps guide on the left. Click any command to paste it.','sys');}
+  tBlank();
+  document.getElementById('feed').innerHTML='';
+  const feedArr = (p==='fix'||p==='done') ? sc.fix_feed : sc.diag_feed;
+  feedArr.forEach((m,i)=>setTimeout(()=>addFeed(m),i*650));
+  document.getElementById('tlbl').textContent=`prod-cluster — ${sc.technique}`;
+  updatePrompt(idx);
+  enInput(); focusInput();
+}
+
+function updatePrompt(idx){
+  const p=ph(idx);
+  const el=document.getElementById('ipr');
+  el.className='ipr '+(p==='diag'?'ipr-d':p==='fix'?'ipr-f':'ipr-v');
+  el.textContent = p==='diag'?'[diag] $':p==='fix'?'[fix] $':'[check] $';
+}
+
+function renderLeft(idx){
+  const sc=SC[idx]; const p=ph(idx);
+  document.getElementById('lp-id').textContent=sc.id;
+  const sb=document.getElementById('lp-sb');
+  if(p==='done'){sb.className='sb sb-done';sb.innerHTML='<span class="sb-dot"></span>resolved';}
+  else if(p==='fix'){sb.className='sb sb-fix';sb.innerHTML='<span class="sb-dot"></span>fixing';}
+  else{sb.className='sb sb-open';sb.innerHTML='<span class="sb-dot"></span>open';}
+  document.getElementById('lp-t').textContent=sc.title;
+  const pri=document.getElementById('lp-pri');
+  pri.className='ipri '+(sc.pri==='pc'?'pc':'ph'); pri.textContent=sc.priLbl;
+  document.getElementById('lp-ctx').textContent=sc.ctx;
+  document.getElementById('lp-err').textContent=sc.err.trim();
+  document.getElementById('lp-tech').textContent='▸ '+sc.technique;
+  // objective
+  const ow=document.getElementById('lp-obj-wrap');
+  if(p==='fix'||p==='done'){
+    ow.innerHTML=`<div class="slbl">Phase 2 — Fix</div><div class="obj obj-f"><div class="obj-lbl obj-f-lbl">Your goal</div><div class="obj-txt">${sc.f_obj}</div></div>`;
+  } else {
+    ow.innerHTML=`<div class="slbl">Phase 1 — Diagnose</div><div class="obj obj-d"><div class="obj-lbl obj-d-lbl">Your goal</div><div class="obj-txt">${sc.d_obj}</div></div>`;
+  }
+  buildGuide(sc,p);
+  sg('steps');
+}
+
+function buildGuide(sc,p){
+  const steps=p==='fix'||p==='done'?sc.f_steps:sc.d_steps;
+  const hints=p==='fix'||p==='done'?sc.f_hints:sc.d_hints;
+  const chk=p==='fix'||p==='done'?sc.f_check:sc.d_check;
+  const numCls=p==='fix'?'sn-f':p==='done'?'sn-v':'sn-d';
+  // steps
+  document.getElementById('gc-steps').innerHTML=steps.map((st,i)=>`
+    <div class="step" id="step-${i}">
+      <div class="step-num ${numCls}">${st.n}</div>
+      <div class="step-body">
+        <div class="step-lbl">${st.lbl}</div>
+        <div class="step-desc">${st.desc}</div>
+        <div class="step-cmd" onclick="pasteCmd(this.getAttribute('data-cmd'))" data-cmd="${st.cmd.replace(/"/g,'&quot;')}" title="Click to paste into terminal">${esc(st.cmd)}</div>
+        <div class="step-note">${st.note}</div>
+      </div>
+    </div>`).join('');
+  // hints (collapsible Q&A)
+  document.getElementById('gc-hints').innerHTML=hints.map((h,i)=>`
+    <div class="hint-row">
+      <div class="hint-q">${h.q}<button class="hint-tog" onclick="toggleHint(${i})">show</button></div>
+      <div class="hint-a" id="ha-${i}">${h.a}</div>
+    </div>`).join('');
+  // what to check
+  document.getElementById('gc-check').innerHTML=chk.map(c=>`
+    <div class="check-item"><div class="ci-bullet">▸</div><div class="ci-body"><strong>${c.t}</strong><span>${c.d}</span></div></div>`).join('');
+}
+
+function sg(tab){
+  ['steps','hints','check'].forEach(t=>{
+    document.getElementById('gt-'+t).classList.toggle('on',t===tab);
+    document.getElementById('gc-'+t).classList.toggle('on',t===tab);
+  });
+}
+
+function toggleHint(i){
+  const el=document.getElementById('ha-'+i);
+  const tog=el.previousElementSibling.querySelector('.hint-tog');
+  const showing=el.classList.toggle('show');
+  tog.textContent=showing?'hide':'show';
+  if(showing)S.hints++;
+}
+
+function pasteCmd(cmd){
+  if(!cmd)return;
+  document.getElementById('ci').value=cmd.trim();
+  focusInput();
+}
+
+function renderPbar(idx){
+  const p=ph(idx);
+  const [p1,p2,p3]=[ document.getElementById('ps1'), document.getElementById('ps2'), document.getElementById('ps3') ];
+  p1.className='ps'+(p==='diag'?' cur-d':p==='fix'||p==='done'?' done-s':' idle');
+  p2.className='ps'+(p==='fix'?' cur-f':p==='done'?' done-s':' idle');
+  p3.className='ps'+(p==='done'?' cur-f':' idle');
+  p1.querySelector('.ps-lbl').textContent=p!=='diag'?'1 · Diagnose ✓':'1 · Diagnose ←';
+  p2.querySelector('.ps-lbl').textContent=p==='done'?'2 · Fix ✓':p==='fix'?'2 · Fix ←':'2 · Fix';
+  p3.querySelector('.ps-lbl').textContent=p==='done'?'3 · Validated ✓':'3 · Validate';
+  const done=SC.filter((_,i)=>ph(i)==='done').length;
+  document.getElementById('pbar-status').textContent=`${done} / ${SC.length} fully resolved`;
+}
+
+/* ──────────────────────────────
+   NAV
+────────────────────────────── */
+function updateNav(){
+  document.getElementById('npills').innerHTML=SC.map((sc,i)=>{
+    const p=ph(i);
+    let c='np';
+    if(p==='done')c+=' done';
+    else if(p==='fix')c+=' cur-fix';
+    else if(i===S.cur)c+=' cur-diag';
+    return `<div class="${c}" onclick="startScenario(${i})"><div class="np-dot"></div>${sc.id}</div>`;
+  }).join('');
+  const done=SC.filter((_,i)=>ph(i)==='done').length;
+  document.getElementById('sc-pill').textContent=done+' / '+SC.length+' fixed';
+  const d1=S.cur===0; const d2=S.cur===SC.length-1;
+  ['bp','tp'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=d1;});
+  ['bn','tn'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=d2;});
+}
+
+function nav(dir){
+  const n=S.cur+dir;
+  if(n<0||n>=SC.length)return;
+  loadScenario(n);
+}
+
+/* ──────────────────────────────
+   TERMINAL
+────────────────────────────── */
+function tLine(h){const t=document.getElementById('term');const d=document.createElement('div');d.className='tl';d.innerHTML=h;t.appendChild(d);t.scrollTop=t.scrollHeight;}
+function tBlank(){tLine('<span class="to">&nbsp;</span>');}
+function tSys(s,cls='sys'){tLine(`<span class="to ${cls}">// ${esc(s)}</span>`);}
+function tOut(txt,cls=''){if(!txt){tBlank();return;}txt.split('\n').forEach(l=>tLine(`<span class="to ${cls}">${esc(l)}</span>`));}
+function tPrompt(cmd){tLine(`<span class="tp">${esc(getPromptPrefix())}</span> <span class="tc">${esc(cmd)}</span>`);}
+function getPromptPrefix(){const p=ph(S.cur);return p==='diag'?'[diag] $':p==='fix'?'[fix] $':'[check] $';}
+function tLoader(id){const t=document.getElementById('term');const d=document.createElement('div');d.className='tl';d.id=id;d.innerHTML=`<span class="to spin">▶ simulating cluster response…</span>`;t.appendChild(d);t.scrollTop=t.scrollHeight;}
+function rmLoader(id){const e=document.getElementById(id);if(e)e.remove();}
+function clearTerm(){document.getElementById('term').innerHTML='';}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+/* ──────────────────────────────
+   INPUT
+────────────────────────────── */
+function enInput(){const i=document.getElementById('ci');i.disabled=false;i.value='';}
+function disInput(){document.getElementById('ci').disabled=true;}
+function focusInput(){setTimeout(()=>document.getElementById('ci').focus(),50);}
+
+document.getElementById('ci').addEventListener('keydown',e=>{
+  if(S.loading)return;
+  const inp=e.target;
+  if(e.key==='Enter'){
+    const cmd=inp.value.trim();if(!cmd)return;
+    inp.value=''; S.hist.unshift(cmd);if(S.hist.length>80)S.hist.pop();S.histIdx=-1;
+    runCmd(cmd);
+  } else if(e.key==='ArrowUp'){e.preventDefault();if(S.histIdx<S.hist.length-1){S.histIdx++;inp.value=S.hist[S.histIdx];}}
+  else if(e.key==='ArrowDown'){e.preventDefault();if(S.histIdx>0){S.histIdx--;inp.value=S.hist[S.histIdx];}else{S.histIdx=-1;inp.value='';}}
+  else if(e.key==='l'&&e.ctrlKey){e.preventDefault();clearTerm();tSys('Cleared.');}
+});
+document.getElementById('term').addEventListener('click',focusInput);
+
+/* ──────────────────────────────
+   RUN COMMAND — with stateful system prompt
+────────────────────────────── */
+async function runCmd(cmd){
+  S.cmds++;
+  tPrompt(cmd);
+  const sc=SC[S.cur]; const p=ph(S.cur);
+  const fixAlreadyApplied=!!S.fixApplied[S.cur];
+
+  // detect if this command is a fix command
+  const isFix = p==='fix' && sc.f_rx.some(rx=>rx.test(cmd));
+  // detect if this command is a diag command
+  const isDiag = p==='diag' && sc.d_rx.some(rx=>rx.test(cmd));
+
+  // if fix command just ran, mark fix applied for stateful prompt
+  if(isFix) S.fixApplied[S.cur]=true;
+
+  disInput(); S.loading=true;
+  const lid='l'+Date.now(); tLoader(lid);
+
+  try{
+    // Pass current fix state so post-fix validation shows correct output
+    const fixState = S.fixApplied[S.cur]||false;
+    const sysPrompt = typeof sc.sysPrompt==='function' ? sc.sysPrompt(fixState) : sc.sysPrompt;
+    const out=await callClaude(cmd, sysPrompt);
+    rmLoader(lid);
+    if(out){tOut(out);S.conv.push({role:'user',content:cmd},{role:'assistant',content:out});}
+  }catch(e){rmLoader(lid);tOut('Connection error — check network.','err');}
+
+  S.loading=false; enInput(); focusInput();
+
+  if(isDiag && ph(S.cur)==='diag') setTimeout(()=>showDiagOv(S.cur),700);
+  else if(isFix && ph(S.cur)==='fix') setTimeout(()=>showFixOv(S.cur),700);
+}
+
+async function callClaude(cmd, sys){
+  const msgs=[...S.conv.slice(-12),{role:'user',content:cmd}];
+  const r=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:900,system:sys,messages:msgs})
+  });
+  const d=await r.json();
+  return d.content?.[0]?.text||'';
+}
+
+/* ──────────────────────────────
+   FEED
+────────────────────────────── */
+function addFeed(m){
+  const tm=TEAM[m.who]; const feed=document.getElementById('feed');
+  const now=new Date(); const t=now.getHours()+':'+(now.getMinutes()+'').padStart(2,'0');
+  const tcls=m.tag==='bug'?'fbugg':m.tag==='fix'?'ffix':'finfo';
+  const tagH=m.tag?`<span class="ftag ${tcls}">${m.tag}</span>`:'';
+  const d=document.createElement('div');d.className='fm';
+  d.innerHTML=`<div class="fmtop"><div class="av ${tm.av}">${tm.n[0]}</div><div class="fn">${tm.n}</div>${tagH}<div class="ft">${t}</div></div><div class="fb">${m.text}</div>`;
+  feed.appendChild(d);feed.scrollTop=feed.scrollHeight;
+}
+
+/* ──────────────────────────────
+   OVERLAYS
+────────────────────────────── */
+function showDiagOv(idx){
+  const sc=SC[idx]; S.ph[idx]='fix'; updateNav(); renderPbar(idx);
+  document.getElementById('od-h').textContent=sc.d_title;
+  document.getElementById('od-s').textContent=sc.d_sub;
+  document.getElementById('od-l').innerHTML=esc(sc.d_learn).replace(/(kubectl\s+\S+[^\n]*)/g,'<span class="ovcmd">$1</span>');
+  document.getElementById('ov-d').classList.add('show');
+}
+function closeOvD(){
+  document.getElementById('ov-d').classList.remove('show');
+  renderLeft(S.cur); updatePrompt(S.cur);
+  tBlank(); tSys('Phase 2: Fix — commands updated. Click to paste, or type directly.','fsys'); tBlank();
+  SC[S.cur].fix_feed.forEach((m,i)=>setTimeout(()=>addFeed(m),i*600));
+}
+function gotoFix(){closeOvD();}
+
+function showFixOv(idx){
+  const sc=SC[idx]; S.ph[idx]='done'; updateNav(); renderPbar(idx);
+  const st=document.getElementById('lp-sb');
+  st.className='sb sb-done';st.innerHTML='<span class="sb-dot"></span>resolved';
+  setTimeout(()=>addFeed({who:'sara',text:`${sc.id} fully resolved! 🎉`,tag:'fix'}),300);
+  setTimeout(()=>addFeed({who:'mia', text:'Confirmed on my end too.',tag:'fix'}),1100);
+  document.getElementById('of-h').textContent=sc.f_title;
+  document.getElementById('of-s').textContent=sc.f_sub;
+  document.getElementById('of-l').innerHTML=esc(sc.f_learn).replace(/(kubectl\s+\S+[^\n]*)/g,'<span class="ovcmd">$1</span>');
+  const btn=document.getElementById('of-next');
+  if(allDone()){btn.textContent='Finish lab ✓';btn.onclick=showFinal;}
+  else{
+    const nxt=SC.findIndex((_,i)=>i>idx&&ph(i)!=='done');
+    if(nxt>=0){btn.textContent=`Next: ${SC[nxt].id} →`;btn.onclick=()=>{document.getElementById('ov-f').classList.remove('show');loadScenario(nxt);};}
+    else{btn.textContent='Finish lab ✓';btn.onclick=showFinal;}
+  }
+  document.getElementById('ov-f').classList.add('show');
+}
+function closeOvF(){
+  document.getElementById('ov-f').classList.remove('show');
+  renderLeft(S.cur); updatePrompt(S.cur);
+  tBlank(); tSys('Issue resolved. Run validation commands to confirm — use the Steps guide.','vsys'); tBlank();
+}
+
+/* ──────────────────────────────
+   FINAL
+────────────────────────────── */
+function showFinal(){
+  document.getElementById('ov-f').classList.remove('show');
+  const mins=Math.round((Date.now()-S.t0)/60000);
+  document.getElementById('f-sc').textContent=SC.filter((_,i)=>ph(i)==='done').length+'/'+SC.length;
+  document.getElementById('f-cm').textContent=S.cmds;
+  document.getElementById('f-hi').textContent=S.hints;
+  document.getElementById('f-ti').textContent=mins+'m';
+  document.getElementById('f-list').innerHTML=SC.map(sc=>`
+    <div class="fi-row">
+      <div class="fi-chk">✓</div>
+      <div class="fi-name">${sc.title}</div>
+      <div class="fi-tch">${sc.technique.split('→')[0].trim()}</div>
+    </div>`).join('');
+  show('fin');
+}
+function restart(){
+  S={cur:0,ph:{},fixApplied:{},cmds:0,hints:0,hist:[],histIdx:-1,loading:false,conv:[],t0:Date.now()};
+  document.getElementById('ov-f').classList.remove('show');
+  document.getElementById('ov-d').classList.remove('show');
+  show('home'); renderHome();
+}
+
+/* ── BOOT ── */
+renderHome();
+</script>
+</body>
+</html>
